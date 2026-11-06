@@ -82,32 +82,40 @@ def _compact(rows: list[dict]) -> list[dict]:
 
 def _ask(client, system: str, content: str, max_tokens: int = 1200) -> str:
     if client == "github":
-        r = requests.post(
-            GITHUB_ENDPOINT,
-            headers={
-                "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-                "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": GITHUB_MODEL, "max_tokens": max_tokens, "temperature": 0.3,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
-            },
-            timeout=120,
-        )
-        try:
-            data = r.json()
-        except ValueError:
-            data = None
-        if r.status_code >= 400 or not data:
-            raise RuntimeError(
-                f"GitHub Models {r.status_code} [{r.headers.get('content-type')}] {r.url}: {r.text[:300]!r}")
-        return data["choices"][0]["message"]["content"].strip()
+        return _ask_github(system, content, max_tokens)
     msg = client.messages.create(
         model=ANTHROPIC_MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": content}],
     )
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+
+
+def _ask_github(system: str, content: str, max_tokens: int) -> str:
+    """GitHub Models; tries the current endpoint, then the older Azure-hosted one."""
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+    attempts = [
+        (GITHUB_ENDPOINT, GITHUB_MODEL, {"Accept": "application/json", "X-GitHub-Api-Version": "2022-11-28"}),
+        ("https://models.inference.ai.azure.com/chat/completions", GITHUB_MODEL.split("/")[-1], {"Accept": "application/json"}),
+    ]
+    errors = []
+    for url, model, extra in attempts:
+        try:
+            r = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}", "Content-Type": "application/json", **extra},
+                data=json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.3, "messages": messages}),
+                timeout=120,
+            )
+            try:
+                data = r.json()
+            except ValueError:
+                data = None
+            if r.status_code < 400 and isinstance(data, dict) and data.get("choices"):
+                return data["choices"][0]["message"]["content"].strip()
+            errors.append(f"{url.split('/')[2]} {r.status_code} [{r.headers.get('content-type')}]: {r.text[:200]!r}")
+        except requests.RequestException as e:
+            errors.append(f"{url.split('/')[2]}: {e}")
+    raise RuntimeError(" | ".join(errors))
 
 
 def _parse_json(text: str) -> dict:
