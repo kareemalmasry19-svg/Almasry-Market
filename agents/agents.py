@@ -3,27 +3,28 @@ merges their notes into one Arabic report.
 
 LLM provider, in order:
   1. Anthropic Claude, if ANTHROPIC_API_KEY is set
-  2. GitHub Models (free, uses the workflow's GITHUB_TOKEN with `models: read`)
+  2. Google Gemini (free tier from aistudio.google.com), if GEMINI_API_KEY is set
 Falls back to a rule-based report when neither works."""
 from __future__ import annotations
 
 import json
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL") or "claude-sonnet-5-5"
-GITHUB_MODEL = os.environ.get("GITHUB_MODEL") or "openai/gpt-4.1"
-GITHUB_ENDPOINT = "https://models.github.ai/inference/chat/completions"
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL") or ""  # empty = pick the newest free Flash model
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
 def provider() -> str | None:
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "anthropic"
-    if os.environ.get("GITHUB_TOKEN"):
-        return "github"
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
     return None
 
 COMMON = (
@@ -81,8 +82,8 @@ def _compact(rows: list[dict]) -> list[dict]:
 
 
 def _ask(client, system: str, content: str, max_tokens: int = 1200) -> str:
-    if client == "github":
-        return _ask_github(system, content, max_tokens)
+    if isinstance(client, tuple) and client[0] == "gemini":
+        return _ask_gemini(client[1], system, content, max_tokens)
     msg = client.messages.create(
         model=ANTHROPIC_MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": content}],
@@ -90,32 +91,52 @@ def _ask(client, system: str, content: str, max_tokens: int = 1200) -> str:
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
 
 
-def _ask_github(system: str, content: str, max_tokens: int) -> str:
-    """GitHub Models; tries the current endpoint, then the older Azure-hosted one."""
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
-    attempts = [
-        (GITHUB_ENDPOINT, GITHUB_MODEL, {"Accept": "application/json", "X-GitHub-Api-Version": "2022-11-28"}),
-        ("https://models.inference.ai.azure.com/chat/completions", GITHUB_MODEL.split("/")[-1], {"Accept": "application/json"}),
+def _version_key(name: str) -> tuple:
+    nums = [int(n) for n in re.findall(r"\d+", name.split("-")[1] if "-" in name else "0")]
+    return tuple(nums) + (0 if "preview" in name or "exp" in name else 1,)
+
+
+def gemini_model() -> str:
+    """Newest text Flash model the key can use (Flash models are on the free tier)."""
+    if GEMINI_MODEL:
+        return GEMINI_MODEL
+    r = requests.get(f"{GEMINI_BASE}/models", params={"key": os.environ["GEMINI_API_KEY"], "pageSize": 200}, timeout=30)
+    r.raise_for_status()
+    names = [
+        m["name"].split("/", 1)[-1] for m in r.json().get("models", [])
+        if "generateContent" in m.get("supportedGenerationMethods", [])
     ]
-    errors = []
-    for url, model, extra in attempts:
-        try:
-            r = requests.post(
-                url,
-                headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}", "Content-Type": "application/json", **extra},
-                data=json.dumps({"model": model, "max_tokens": max_tokens, "temperature": 0.3, "messages": messages}),
-                timeout=120,
-            )
-            try:
-                data = r.json()
-            except ValueError:
-                data = None
-            if r.status_code < 400 and isinstance(data, dict) and data.get("choices"):
-                return data["choices"][0]["message"]["content"].strip()
-            errors.append(f"{url.split('/')[2]} {r.status_code} [{r.headers.get('content-type')}]: {r.text[:200]!r}")
-        except requests.RequestException as e:
-            errors.append(f"{url.split('/')[2]}: {e}")
-    raise RuntimeError(" | ".join(errors))
+    skip = ("lite", "image", "tts", "audio", "live", "embedding", "thinking", "robotics", "computer")
+    flash = [n for n in names if n.startswith("gemini-") and "flash" in n and not any(k in n for k in skip)]
+    if not flash:
+        flash = [n for n in names if n.startswith("gemini-") and "flash" in n]
+    if not flash:
+        raise RuntimeError(f"no Gemini Flash model available: {names[:10]}")
+    return max(flash, key=_version_key)
+
+
+def _ask_gemini(model: str, system: str, content: str, max_tokens: int) -> str:
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": content}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens * 4},
+    }
+    for attempt in range(4):
+        r = requests.post(
+            f"{GEMINI_BASE}/models/{model}:generateContent",
+            params={"key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=180,
+        )
+        if r.status_code in (429, 500, 503) and attempt < 3:
+            time.sleep(15 * (attempt + 1))  # free tier is ~10 requests/minute
+            continue
+        if r.status_code >= 400:
+            raise RuntimeError(f"Gemini {model} {r.status_code}: {r.text[:300]}")
+        parts = r.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+        if text:
+            return text
+        raise RuntimeError(f"Gemini {model}: empty answer {r.text[:300]}")
+    raise RuntimeError("Gemini: retries exhausted")
 
 
 def _parse_json(text: str) -> dict:
@@ -131,8 +152,8 @@ def ai_report(market: dict) -> dict:
         client = anthropic.Anthropic()
         model = ANTHROPIC_MODEL
     else:
-        client = "github"
-        model = GITHUB_MODEL
+        model = gemini_model()
+        client = ("gemini", model)
     prices = {
         "egx_indices": _compact(market["egx"]["indices"]),
         "egx_stocks": _compact(market["egx"]["stocks"]),

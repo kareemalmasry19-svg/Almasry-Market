@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: write
-  models: read      # free AI via GitHub Models
 
 concurrency:
   group: market-agents
@@ -45,8 +44,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_MODEL: ${{ vars.GITHUB_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           FORCE_REPORT: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.force_report)) && '1' || '0' }}
         run: python agents/run.py
       - name: Publish to data branch

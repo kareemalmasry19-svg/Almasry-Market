@@ -9,9 +9,9 @@
 - **`android/`**: التطبيق بيقرا الملف ده ويعرضه، وبيبعت إشعار لما ينزل تقرير جديد. الـ APK بيتبني تلقائياً (`Build APK`) وبينزل في Releases ▸ latest.
 
 ## الذكاء الاصطناعي
-- افتراضياً الـ agents بيستخدموا **GitHub Models** مجاناً من غير أي مفتاح (الموديل `openai/gpt-4.1`، وتقدر تغيره بـ Variable اسمه `GITHUB_MODEL`).
-- لو حطيت Secret اسمه `ANTHROPIC_API_KEY` الـ agents بيتحولوا لـ Claude تلقائياً.
-- لو الـ AI مش متاح في أي تحديث، التقرير بيبقى تحليل فني بالمؤشرات لحد المحاولة الجاية.
+- **Gemini (مجاني):** اعمل مفتاح من [aistudio.google.com/apikey](https://aistudio.google.com/apikey) وحطه Secret باسم `GEMINI_API_KEY`. الـ agents بيختاروا أحدث موديل Flash مجاني تلقائياً، أو حدده بـ Variable اسمه `GEMINI_MODEL`.
+- **Claude (اختياري):** لو حطيت Secret اسمه `ANTHROPIC_API_KEY` بيتقدم على Gemini.
+- من غير أي مفتاح، أو لو الـ AI وقع، التقرير بيبقى تحليل فني بالمؤشرات لحد المحاولة الجاية.
 - تشغيل يدوي: Actions ▸ Market agents ▸ Run workflow.
 
 > تحليل للمساعدة في الفهم وليس نصيحة استثمارية.
