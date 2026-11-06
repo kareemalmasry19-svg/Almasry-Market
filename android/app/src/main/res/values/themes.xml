@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.Market" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/ink</item>
+    </style>
+    <color name="ink">#FF0A0A0B</color>
+    <color name="gold">#FFD4AF37</color>
+</resources>
