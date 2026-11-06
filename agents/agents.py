@@ -222,4 +222,7 @@ def build_report(market: dict) -> dict:
             return ai_report(market)
         except Exception as e:
             print(f"[warn] AI report failed, using rules: {e}")
+            r = rules_report(market)
+            r["ai_error"] = str(e)[:400]
+            return r
     return rules_report(market)
