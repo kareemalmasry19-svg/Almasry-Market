@@ -1,6 +1,9 @@
 name: Market agents
 
 on:
+  push:
+    branches: [main]
+    paths: ["agents/**", ".github/workflows/agents.yml"]
   schedule:
     - cron: "7 * * * *"      # every hour
   workflow_dispatch:
