@@ -95,9 +95,14 @@ def _ask(client, system: str, content: str, max_tokens: int = 1200) -> str:
             },
             timeout=120,
         )
-        if r.status_code >= 400:
-            raise RuntimeError(f"GitHub Models {r.status_code}: {r.text[:300]}")
-        return r.json()["choices"][0]["message"]["content"].strip()
+        try:
+            data = r.json()
+        except ValueError:
+            data = None
+        if r.status_code >= 400 or not data:
+            raise RuntimeError(
+                f"GitHub Models {r.status_code} [{r.headers.get('content-type')}] {r.url}: {r.text[:300]!r}")
+        return data["choices"][0]["message"]["content"].strip()
     msg = client.messages.create(
         model=ANTHROPIC_MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": content}],
