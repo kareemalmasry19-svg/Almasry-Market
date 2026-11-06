@@ -1,6 +1,10 @@
 """The analysis team: three specialist agents run in parallel, then a chief strategist
-merges their notes into one Arabic report. Falls back to a rule-based report when no
-ANTHROPIC_API_KEY is configured or the API call fails."""
+merges their notes into one Arabic report.
+
+LLM provider, in order:
+  1. Anthropic Claude, if ANTHROPIC_API_KEY is set
+  2. GitHub Models (free, uses the workflow's GITHUB_TOKEN with `models: read`)
+Falls back to a rule-based report when neither works."""
 from __future__ import annotations
 
 import json
@@ -8,7 +12,19 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+import requests
+
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL") or "claude-sonnet-5-5"
+GITHUB_MODEL = os.environ.get("GITHUB_MODEL") or "openai/gpt-4.1"
+GITHUB_ENDPOINT = "https://models.github.ai/inference/chat/completions"
+
+
+def provider() -> str | None:
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("GITHUB_TOKEN"):
+        return "github"
+    return None
 
 COMMON = (
     "أنت عضو في فريق تحليل أسواق لتطبيق عربي اسمه «المصري ماركت». "
@@ -52,17 +68,38 @@ CHIEF = COMMON + (
 
 
 def _compact(rows: list[dict]) -> list[dict]:
-    keep = ("symbol", "name", "price", "change_pct", "week_pct", "month_pct", "date")
     out = []
     for r in rows:
-        ta = {k: v for k, v in r.get("ta", {}).items() if k != "reasons"}
-        out.append({**{k: r.get(k) for k in keep}, "ta": ta})
+        ta = r.get("ta", {})
+        out.append({
+            "s": r["symbol"], "p": r["price"], "d%": r["change_pct"], "w%": r["week_pct"], "m%": r["month_pct"],
+            "rsi": ta.get("rsi"), "sma20": ta.get("sma20"), "sma50": ta.get("sma50"),
+            "macd>sig": None if ta.get("macd") is None else ta["macd"] > ta["macd_signal"],
+            "sup": ta.get("support"), "res": ta.get("resistance"), "score": ta.get("score"),
+        })
     return out
 
 
 def _ask(client, system: str, content: str, max_tokens: int = 1200) -> str:
+    if client == "github":
+        r = requests.post(
+            GITHUB_ENDPOINT,
+            headers={
+                "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GITHUB_MODEL, "max_tokens": max_tokens, "temperature": 0.3,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
+            },
+            timeout=120,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"GitHub Models {r.status_code}: {r.text[:300]}")
+        return r.json()["choices"][0]["message"]["content"].strip()
     msg = client.messages.create(
-        model=MODEL, max_tokens=max_tokens, system=system,
+        model=ANTHROPIC_MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": content}],
     )
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
@@ -76,9 +113,13 @@ def _parse_json(text: str) -> dict:
 
 
 def ai_report(market: dict) -> dict:
-    import anthropic
-
-    client = anthropic.Anthropic()
+    if provider() == "anthropic":
+        import anthropic
+        client = anthropic.Anthropic()
+        model = ANTHROPIC_MODEL
+    else:
+        client = "github"
+        model = GITHUB_MODEL
     prices = {
         "egx_indices": _compact(market["egx"]["indices"]),
         "egx_stocks": _compact(market["egx"]["stocks"]),
@@ -89,9 +130,10 @@ def ai_report(market: dict) -> dict:
         "gold_egp_per_gram": market["fx"].get("gold_egp", []),
     }
     headlines = {
-        k: [f"{n['title']} ({n['source']})" for n in v] for k, v in market["news"].items()
+        k: [n["title"] for n in v[:20]] for k, v in market["news"].items()
     }
-    prices_txt = json.dumps(prices, ensure_ascii=False)
+    prices_txt = json.dumps(prices, ensure_ascii=False, separators=(",", ":"))
+    symbols = [r["s"] for v in prices.values() if isinstance(v, list) for r in v if isinstance(r, dict) and "s" in r]
     news_txt = json.dumps(headlines, ensure_ascii=False)
 
     with ThreadPoolExecutor(3) as pool:
@@ -104,12 +146,12 @@ def ai_report(market: dict) -> dict:
         f"ملاحظات المحلل الفني:\n{notes['technical']}\n\n"
         f"ملاحظات محلل الأخبار:\n{notes['news']}\n\n"
         f"ملاحظات محلل الاقتصاد الكلي:\n{notes['macro']}\n\n"
-        f"البيانات للمرجعية:\n{prices_txt}"
+        f"الرموز المتاحة لقائمة المراقبة: {', '.join(symbols)}"
     )
     report = _parse_json(_ask(client, CHIEF, chief_in, max_tokens=2000))
     report["agents"] = notes
     report["generated_by"] = "ai"
-    report["model"] = MODEL
+    report["model"] = model
     return report
 
 
@@ -162,7 +204,7 @@ def rules_report(market: dict) -> dict:
     return {
         "headline": headline,
         "summary": "تقرير مبني على المؤشرات الفنية فقط (RSI وMACD والمتوسطات). "
-                   "فعّل مفتاح Anthropic في إعدادات GitHub ليحلل فريق الـ AI الأخبار ويربطها بالأسعار.",
+                   "فريق الـ AI لم يكن متاحاً في هذا التحديث، وسيحاول مرة أخرى في الموعد القادم.",
         "egx": line(egx30, "مؤشر EGX30"),
         "egp": egp,
         "forex": line(dxy, "مؤشر الدولار"),
@@ -175,7 +217,7 @@ def rules_report(market: dict) -> dict:
 
 
 def build_report(market: dict) -> dict:
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if provider():
         try:
             return ai_report(market)
         except Exception as e:

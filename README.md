@@ -3,15 +3,15 @@
 تطبيق Android لمتابعة وتحليل البورصة المصرية، والجنيه، والفوركس، والذهب، والأخبار.
 
 ## إزاي بيشتغل
-- **`agents/`**: كود Python بيشتغل كل ساعة على GitHub Actions (`Market agents`). بيجيب الأسعار من Yahoo Finance والأخبار من Google News، ويحسب المؤشرات الفنية (RSI وMACD والمتوسطات). وفي مواعيد التقرير (9 و1 و5 و9 مساءً بتوقيت القاهرة) فريق agents من Claude بيحلل:
+- **`agents/`**: كود Python بيشتغل كل ساعة على GitHub Actions (`Market agents`). بيجيب الأسعار من Yahoo Finance والأخبار من Google News، ويحسب المؤشرات الفنية (RSI وMACD والمتوسطات). وفي مواعيد التقرير (9 و1 و5 و9 مساءً بتوقيت القاهرة) فريق agents بالذكاء الاصطناعي بيحلل:
   محلل فني + محلل أخبار + محلل اقتصاد وعملات، وبعدين كبير استراتيجيين بيجمعهم في تقرير واحد.
 - النتيجة بتتحفظ في `market.json` على فرع `data`.
 - **`android/`**: التطبيق بيقرا الملف ده ويعرضه، وبيبعت إشعار لما ينزل تقرير جديد. الـ APK بيتبني تلقائياً (`Build APK`) وبينزل في Releases ▸ latest.
 
-## التفعيل
-1. Settings ▸ Secrets and variables ▸ Actions ▸ New repository secret: الاسم `ANTHROPIC_API_KEY`، والقيمة مفتاحك.
-   من غير المفتاح التقرير بيبقى تحليل فني بس.
-2. اختياري: Variable باسم `ANTHROPIC_MODEL` لو عايز تغير الموديل (الافتراضي `claude-sonnet-5-5`).
-3. Actions ▸ Market agents ▸ Run workflow عشان أول تشغيل.
+## الذكاء الاصطناعي
+- افتراضياً الـ agents بيستخدموا **GitHub Models** مجاناً من غير أي مفتاح (الموديل `openai/gpt-4.1`، وتقدر تغيره بـ Variable اسمه `GITHUB_MODEL`).
+- لو حطيت Secret اسمه `ANTHROPIC_API_KEY` الـ agents بيتحولوا لـ Claude تلقائياً.
+- لو الـ AI مش متاح في أي تحديث، التقرير بيبقى تحليل فني بالمؤشرات لحد المحاولة الجاية.
+- تشغيل يدوي: Actions ▸ Market agents ▸ Run workflow.
 
 > تحليل للمساعدة في الفهم وليس نصيحة استثمارية.

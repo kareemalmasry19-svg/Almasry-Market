@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import fetch  # noqa: E402
 import universe as u  # noqa: E402
-from agents import build_report  # noqa: E402
+from agents import build_report, provider  # noqa: E402
 
 OUT = Path(os.environ.get("OUT", Path(__file__).parent.parent / "data" / "market.json"))
 
@@ -63,12 +63,20 @@ def main() -> None:
 
     hours = {int(h) for h in os.environ.get("REPORT_HOURS_UTC", "7,11,15,19").split(",") if h.strip()}
     old_report = previous.get("report")
-    want_ai = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    want_ai = provider() is not None
+
+    def age_hours(r: dict) -> float:
+        try:
+            return (now - dt.datetime.fromisoformat(r["created"])).total_seconds() / 3600
+        except Exception:
+            return 99.0
+
     rebuild = (
         os.environ.get("FORCE_REPORT") == "1"
         or not old_report
         or now.hour in hours
-        or (want_ai and old_report.get("generated_by") != "ai")
+        # AI failed last time: retry, but at most every 2 hours to respect free-tier limits
+        or (want_ai and old_report.get("generated_by") != "ai" and age_hours(old_report) >= 2)
     )
     if rebuild:
         report = build_report(market)
