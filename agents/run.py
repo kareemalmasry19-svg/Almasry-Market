@@ -5,6 +5,7 @@ Env:
   ANTHROPIC_API_KEY   enables the AI agents team
   FORCE_REPORT=1      rebuild the report now
   REPORT_HOURS_UTC    hours when the report is rebuilt (default 7,11,15,19 = 9/13/17/21 Cairo)
+  WHATSAPP_PHONE, CALLMEBOT_APIKEY   send every new report to WhatsApp
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import fetch  # noqa: E402
 import universe as u  # noqa: E402
+import whatsapp  # noqa: E402
 from agents import build_report, provider  # noqa: E402
 
 OUT = Path(os.environ.get("OUT", Path(__file__).parent.parent / "data" / "market.json"))
@@ -90,6 +92,8 @@ def main() -> None:
     market["disclaimer"] = "تحليل للمساعدة في الفهم وليس نصيحة استثمارية. البيانات من مصادر عامة وقد تتأخر."
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(market, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    if rebuild:
+        whatsapp.send(market)
     print(f"[done] wrote {OUT} ({OUT.stat().st_size // 1024} KB), report={report.get('generated_by')}")
 
 

@@ -14,4 +14,10 @@
 - من غير أي مفتاح، أو لو الـ AI وقع، التقرير بيبقى تحليل فني بالمؤشرات لحد المحاولة الجاية.
 - تشغيل يدوي: Actions ▸ Market agents ▸ Run workflow.
 
+## الواتساب
+كل تقرير جديد بيتبعت على الواتساب عن طريق CallMeBot (مجاني):
+1. احفظ رقم البوت من [callmebot.com/blog/free-api-whatsapp-messages](https://www.callmebot.com/blog/free-api-whatsapp-messages/) وابعتله: `I allow callmebot to send me messages`
+2. هيرد عليك بـ apikey.
+3. Secrets: `WHATSAPP_PHONE` (رقمك بكود الدولة) و `CALLMEBOT_APIKEY`.
+
 > تحليل للمساعدة في الفهم وليس نصيحة استثمارية.

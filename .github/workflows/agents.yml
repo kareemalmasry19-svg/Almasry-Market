@@ -46,6 +46,8 @@ jobs:
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
           FORCE_REPORT: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.force_report)) && '1' || '0' }}
         run: python agents/run.py
       - name: Publish to data branch
