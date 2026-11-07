@@ -83,6 +83,11 @@ def main() -> None:
     if rebuild:
         report = build_report(market)
         report["created"] = now.isoformat(timespec="seconds")
+        # AI hiccup: keep a recent AI report rather than downgrading to the rules summary
+        if report.get("generated_by") != "ai" and old_report and old_report.get("generated_by") == "ai" \
+                and age_hours(old_report) < 8:
+            print(f"[info] AI failed ({report.get('ai_error')}); keeping previous AI report")
+            report, rebuild = old_report, False
     else:
         report = old_report
         print("[info] keeping previous report")

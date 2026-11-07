@@ -122,10 +122,16 @@ def _ask_gemini(model: str, system: str, content: str, max_tokens: int) -> str:
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens * 4},
     }
     for attempt in range(4):
-        r = requests.post(
-            f"{GEMINI_BASE}/models/{model}:generateContent",
-            params={"key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=180,
-        )
+        try:
+            r = requests.post(
+                f"{GEMINI_BASE}/models/{model}:generateContent",
+                params={"key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=240,
+            )
+        except (requests.Timeout, requests.ConnectionError):
+            if attempt < 3:
+                time.sleep(10)
+                continue
+            raise
         if r.status_code in (429, 500, 503) and attempt < 3:
             time.sleep(15 * (attempt + 1))  # free tier is ~10 requests/minute
             continue
